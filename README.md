@@ -1,4 +1,3 @@
-Of course. Here is a small, well-structured README file for your project in Markdown format.
 
 -----
 
@@ -73,15 +72,7 @@ Follow these steps to get the project running on your local machine.
 
     The application should now be running on `http://localhost:5173`.
 
-## 🚢 Deployment
 
-You can easily deploy this project to platforms like **Vercel** or **Netlify**.
-
-1.  Push your code to a GitHub, GitLab, or Bitbucket repository.
-2.  Import the repository into your Vercel or Netlify account.
-3.  The build settings will be automatically detected (Build command: `npm run build`, Publish directory: `dist`).
-4.  **Crucially**, you must add the same `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` environment variables in your deployment provider's project settings.
-5.  Deploy\!
 
 ## Made By
 
