@@ -19,35 +19,83 @@ const Index = () => {
   const [currentLampId, setCurrentLampId] = useState<string | null>(null);
   const [currentShareToken, setCurrentShareToken] = useState<string | null>(null);
   const [lampCount, setLampCount] = useState(0);
-  const [showHint, setShowHint] = useState(false);
+  const [hintStep, setHintStep] = useState(0); // 0: no hint, 1: hint 1, 2: hint 2
   const [lampAlreadyCreated, setLampAlreadyCreated] = useState(() => hasCreatedLamp());
+  const [isManualPlacementMode, setIsManualPlacementMode] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
-    const isFirstVisit = !localStorage.getItem('hasVisited');
-    if (isFirstVisit) {
-      setShowHint(true);
-      localStorage.setItem('hasVisited', 'true');
-      setTimeout(() => setShowHint(false), 8000);
-    }
+    const initializeState = async () => {
+      const isFirstVisit = !localStorage.getItem('hasVisited');
+      if (isFirstVisit) {
+        setHintStep(1);
+        localStorage.setItem('hasVisited', 'true');
+        setTimeout(() => setHintStep(0), 8000);
+      }
 
-    if (lampAlreadyCreated) {
-      const lampId = localStorage.getItem('myLampId');
-      const shareToken = localStorage.getItem('myShareToken');
+      let lampId = localStorage.getItem('myLampId');
+      let shareToken = localStorage.getItem('myShareToken');
+
+      if (!lampId || !shareToken) {
+        try {
+          const ipResponse = await fetch('https://api.ipify.org?format=json');
+          const { ip } = await ipResponse.json();
+          const { data, error } = await supabase
+            .from('lamps')
+            .select('id, share_token')
+            .eq('ip_address', ip)
+            .single();
+
+          if (data) {
+            lampId = data.id;
+            shareToken = data.share_token;
+            localStorage.setItem('myLampId', lampId);
+            localStorage.setItem('myShareToken', shareToken);
+            setLampAlreadyCreated(true);
+          }
+        } catch (e) {
+          console.log("Could not fetch IP or existing lamp. User is likely new.");
+        }
+      }
+
       if (lampId && shareToken) {
         setCurrentLampId(lampId);
         setCurrentShareToken(shareToken);
       }
+
+      const params = new URLSearchParams(window.location.search);
+      const paramLampId = params.get('lamp');
+      const paramToken = params.get('token');
+
+      if (paramLampId && paramToken) {
+        validateAndSetParent(paramLampId, paramToken);
+      }
+    };
+
+    initializeState();
+  }, []);
+  
+  useEffect(() => {
+    if (!map) return;
+    const mapContainer = map.getContainer();
+
+    const handleMapClick = (e: L.LeafletMouseEvent) => {
+      setUserCoords({ lat: e.latlng.lat, lng: e.latlng.lng });
+      setIsCreateModalOpen(true);
+      setIsManualPlacementMode(false);
+    };
+
+    if (isManualPlacementMode) {
+      mapContainer.classList.add('custom-diya-cursor');
+      map.on('click', handleMapClick);
+    } else {
+      mapContainer.classList.remove('custom-diya-cursor');
     }
 
-    const params = new URLSearchParams(window.location.search);
-    const lampId = params.get('lamp');
-    const token = params.get('token');
-
-    if (lampId && token) {
-      validateAndSetParent(lampId, token);
-    }
-  }, [map, lampAlreadyCreated]);
+    return () => {
+      map.off('click', handleMapClick);
+    };
+  }, [map, isManualPlacementMode]);
 
   useEffect(() => {
     const fetchCount = async () => {
@@ -61,9 +109,7 @@ const Index = () => {
 
     const channel = supabase
       .channel('lamp-count-changes')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lamps' }, () => {
-        fetchCount();
-      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lamps' }, fetchCount)
       .subscribe();
 
     return () => {
@@ -79,12 +125,10 @@ const Index = () => {
       .eq('share_token', token)
       .single();
 
-    if (data) {
+    if (data && map) {
       setParentLampId(lampId);
       const coords = data.coords as { lat: number; lng: number };
-      if (map) {
-        map.setView([coords.lat, coords.lng], 6);
-      }
+      map.setView([coords.lat, coords.lng], 6);
       toast({
         title: '✨ Connection found!',
         description: 'Light your diya to connect with your friend.',
@@ -94,20 +138,17 @@ const Index = () => {
 
   const handleLightDiya = () => {
     if (lampAlreadyCreated) {
-      toast({
-        title: 'Already lit!',
-        description: 'You can share your light by inviting friends.',
-        variant: 'default',
-      });
+      if (currentLampId && currentShareToken) {
+        setIsShareModalOpen(true);
+      } else {
+        toast({ title: "Please reload the page to get your share link."});
+      }
       return;
     }
 
     if (!navigator.geolocation) {
-      toast({
-        title: 'Location not supported',
-        description: 'Your browser does not support geolocation.',
-        variant: 'destructive',
-      });
+      setHintStep(2);
+      setIsManualPlacementMode(true);
       return;
     }
 
@@ -124,11 +165,8 @@ const Index = () => {
         }
       },
       () => {
-        toast({
-          title: 'Location required',
-          description: 'Please allow location access to light your diya.',
-          variant: 'destructive',
-        });
+        setHintStep(2);
+        setIsManualPlacementMode(true);
       }
     );
   };
@@ -175,7 +213,7 @@ const Index = () => {
             </Button>
           ) : (
             <Button
-              onClick={() => setIsShareModalOpen(true)}
+              onClick={handleLightDiya}
               size="lg"
               className="w-full bg-gradient-to-r from-primary to-secondary hover:opacity-90 text-lg font-semibold py-6 glow-amber shadow-2xl"
             >
@@ -208,12 +246,19 @@ const Index = () => {
         </div>
       </div>
 
-      {(showHint && !parentLampId) && (
+      {(hintStep > 0 && !parentLampId) && (
         <div className="absolute top-24 left-0 right-0 z-10 px-4 animate-in fade-in duration-500">
-          <div className="max-w-md mx-auto bg-card/80 border border-border rounded-lg p-3 backdrop-blur-sm" onClick={() => setShowHint(false)}>
-            <p className="text-sm text-center text-foreground">
-              Hint: Zoom in and click on a diya to see what messages people have left for the world!
-            </p>
+          <div className="max-w-md mx-auto bg-card/80 border border-border rounded-lg p-3 backdrop-blur-sm" onClick={() => setHintStep(0)}>
+            {hintStep === 1 && (
+              <p className="text-sm text-center text-foreground">
+                Hint: Zoom in and click on a diya to see what messages people have left for the world!
+              </p>
+            )}
+            {hintStep === 2 && (
+              <p className="text-sm text-center text-foreground">
+                🪔 If you don't feel comfy sharing location, just place a Diya on the map.
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -249,4 +294,3 @@ const Index = () => {
 };
 
 export default Index;
-

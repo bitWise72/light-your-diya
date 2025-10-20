@@ -163,4 +163,9 @@ All colors MUST be HSL.
   .animate-pulse-glow {
     animation: pulse-glow 2s ease-in-out infinite;
   }
+
+  .custom-diya-cursor {
+    cursor: url('/diya.svg') 16 2, crosshair;
+  }
 }
+
