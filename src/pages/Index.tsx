@@ -3,7 +3,7 @@ import MapView from '@/components/MapView';
 import CreateLampModal from '@/components/CreateLampModal';
 import ShareModal from '@/components/ShareModal';
 import { Button } from '@/components/ui/button';
-import { Flame, Eye, EyeOff, Sparkles } from 'lucide-react';
+import { Flame, Eye, EyeOff, Sparkles, Share2 } from 'lucide-react';
 import { hasCreatedLamp } from '@/lib/fingerprint';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -19,9 +19,27 @@ const Index = () => {
   const [currentLampId, setCurrentLampId] = useState<string | null>(null);
   const [currentShareToken, setCurrentShareToken] = useState<string | null>(null);
   const [lampCount, setLampCount] = useState(0);
+  const [showHint, setShowHint] = useState(false);
+  const [lampAlreadyCreated, setLampAlreadyCreated] = useState(() => hasCreatedLamp());
   const { toast } = useToast();
 
   useEffect(() => {
+    const isFirstVisit = !localStorage.getItem('hasVisited');
+    if (isFirstVisit) {
+      setShowHint(true);
+      localStorage.setItem('hasVisited', 'true');
+      setTimeout(() => setShowHint(false), 8000);
+    }
+
+    if (lampAlreadyCreated) {
+      const lampId = localStorage.getItem('myLampId');
+      const shareToken = localStorage.getItem('myShareToken');
+      if (lampId && shareToken) {
+        setCurrentLampId(lampId);
+        setCurrentShareToken(shareToken);
+      }
+    }
+
     const params = new URLSearchParams(window.location.search);
     const lampId = params.get('lamp');
     const token = params.get('token');
@@ -29,7 +47,7 @@ const Index = () => {
     if (lampId && token) {
       validateAndSetParent(lampId, token);
     }
-  }, [map]);
+  }, [map, lampAlreadyCreated]);
 
   useEffect(() => {
     const fetchCount = async () => {
@@ -75,16 +93,12 @@ const Index = () => {
   };
 
   const handleLightDiya = () => {
-    if (hasCreatedLamp()) {
-        if (currentLampId && currentShareToken) {
-            setIsShareModalOpen(true);
-        } else {
-            toast({
-                title: 'Already lit!',
-                description: 'You can share your light from the main screen.',
-                variant: 'default',
-            });
-        }
+    if (lampAlreadyCreated) {
+      toast({
+        title: 'Already lit!',
+        description: 'You can share your light by inviting friends.',
+        variant: 'default',
+      });
       return;
     }
 
@@ -122,6 +136,9 @@ const Index = () => {
   const handleLampCreated = (lampId: string, shareToken: string) => {
     setCurrentLampId(lampId);
     setCurrentShareToken(shareToken);
+    localStorage.setItem('myLampId', lampId);
+    localStorage.setItem('myShareToken', shareToken);
+    setLampAlreadyCreated(true);
     setIsShareModalOpen(true);
   };
 
@@ -147,41 +164,59 @@ const Index = () => {
 
       <div className="absolute bottom-8 left-0 right-0 z-10 px-4">
         <div className="max-w-md mx-auto space-y-3">
+          {!lampAlreadyCreated ? (
+            <Button
+              onClick={handleLightDiya}
+              size="lg"
+              className="w-full bg-gradient-to-r from-primary to-secondary hover:opacity-90 text-lg font-semibold py-6 glow-amber shadow-2xl"
+            >
+              <Sparkles className="h-5 w-5 mr-2" />
+              Light Your Diya
+            </Button>
+          ) : (
+            <Button
+              onClick={() => setIsShareModalOpen(true)}
+              size="lg"
+              className="w-full bg-gradient-to-r from-primary to-secondary hover:opacity-90 text-lg font-semibold py-6 glow-amber shadow-2xl"
+            >
+              <Share2 className="h-5 w-5 mr-2" />
+              Share Your Light with Friends!
+            </Button>
+          )}
+
           <Button
-            onClick={handleLightDiya}
+            onClick={() => setShowLines(!showLines)}
+            variant="outline"
             size="lg"
-            className="w-full bg-gradient-to-r from-primary to-secondary hover:opacity-90 text-lg font-semibold py-6 glow-amber shadow-2xl"
+            className="w-full bg-card/80 backdrop-blur-sm text-lg font-semibold py-6"
           >
-            <Sparkles className="h-5 w-5 mr-2" />
-            {hasCreatedLamp() ? 'Share Your Light' : 'Light Your Diya'}
+            {showLines ? (
+              <><EyeOff className="h-5 w-5 mr-2" /> Hide Global Connections</>
+            ) : (
+              <><Eye className="h-5 w-5 mr-2" /> Show Global Connections</>
+            )}
           </Button>
 
-          <div className="flex gap-2">
-            <Button
-              onClick={() => setShowLines(!showLines)}
-              variant="outline"
-              className="flex-1 bg-card/80 backdrop-blur-sm"
-            >
-              {showLines ? (
-                <><EyeOff className="h-4 w-4 mr-2" /> Hide Lines</>
-              ) : (
-                <><Eye className="h-4 w-4 mr-2" /> Show Lines</>
-              )}
-            </Button>
-          </div>
-          
-          {/* --- ATTRIBUTION LINK ADDED HERE --- */}
           <a
             href="https://linktr.ee/bitwise72"
             target="_blank"
             rel="noopener noreferrer"
-            className="block w-full text-center text-xs text-muted-foreground transition-colors hover:text-primary mt-2"
+            className="block w-full pt-2 text-center text-xs text-muted-foreground transition-colors hover:text-primary"
           >
             Made by @bitwise
           </a>
-
         </div>
       </div>
+
+      {(showHint && !parentLampId) && (
+        <div className="absolute top-24 left-0 right-0 z-10 px-4 animate-in fade-in duration-500">
+          <div className="max-w-md mx-auto bg-card/80 border border-border rounded-lg p-3 backdrop-blur-sm" onClick={() => setShowHint(false)}>
+            <p className="text-sm text-center text-foreground">
+              Hint: Zoom in and click on a diya to see what messages people have left for the world!
+            </p>
+          </div>
+        </div>
+      )}
 
       {parentLampId && (
         <div className="absolute top-24 left-0 right-0 z-10 px-4">
